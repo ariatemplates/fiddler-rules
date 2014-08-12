@@ -109,6 +109,55 @@ class Handlers
     RulesStringValue(24,"&Custom...", "%CUSTOM%")
     public static var sUA: String = null;
 
+
+    //// ARIA_TEMPLATES_SPECIFIC BEGIN
+    // Enable redirection
+    BindPref("ariatemplates.ephemeral.at_redirect")
+    RulesString("Aria Templates &redirection", true)
+    RulesStringValue(0,"Redirect to a particular &version... (e.g. 1.5-2A)", "%CUSTOM%")
+    RulesStringValue(1,"1.4-17H", "1.4-17H")
+    RulesStringValue(2,"1.5-4", "1.5-4")
+    RulesStringValue(3,"1.6-3", "1.6-3")
+    public static var at_redirect: String = null;
+
+    // Option to target unminified files
+    BindPref("ariatemplates.ephemeral.at_targetDev")
+    public static RulesOption("Target &non-minified files", "Aria Templates &options")
+    var at_targetDev: boolean = false;
+
+    // Option to enable debug mode (Aria.debug = true) to have JSON beans validation
+    // See http://ariatemplates.com/usermanual/latest/logging_and_debugging#debugging
+    BindPref("ariatemplates.ephemeral.at_debugMode")
+    public static RulesOption("Set Aria.&debug = true", "Aria Templates &options")
+    var at_debugMode: boolean = false;
+
+    // Skip AT redirections for certain URLs (needed if user has deployed AT to "aria" folder)
+    BindPref("ariatemplates.ephemeral.at_skipRedirectRegex")
+    RulesString("Aria Templates &avoid redirection for...", true)
+    RulesStringValue(0,"&Regular expression... e.g. (aria/myfile)|(aria/myotherfile)", "%CUSTOM%")
+    public static var at_skipRedirectRegex: String = null;
+
+    // Set custom name of the AT bootstrap file if needed
+    BindPref("ariatemplates.ephemeral.at_bootstrapFileRegex")
+    RulesString("Aria Templates custom &bootstrap file", true)
+    RulesStringValue(0,"&Regular expression... (e.g. myAriaTemplatesBootstrap*.js)", "%CUSTOM%")
+    public static var at_bootstrapFileRegex: String = null;
+
+    // Set custom name of the AT skin file if redirection is needed
+    BindPref("ariatemplates.ephemeral.at_skinFileRegex")
+    RulesString("Aria Templates custom &skin file", true)
+    RulesStringValue(0,"Regular expression... (e.g. mySkin*.js)", "%CUSTOM%")
+    public static var at_skinFileRegex: String = null;
+
+    // If enabled, found skin will be forcedly redirected to a chosen one.
+    // Otherwise, found skin will be redirected to a matching skin (i.e. atskin -> atskin)
+    BindPref("ariatemplates.ephemeral.at_targetSkinFile")
+    RulesString("Aria Templates &target skin name", true)
+    RulesStringValue(0,"atskin", "atskin", true)
+    RulesStringValue(1,"atflatskin", "atflatskin")
+    public static var at_targetSkinFile: String = null;
+    //// ARIA_TEMPLATES_SPECIFIC END
+
     // Cause Fiddler to delay HTTP traffic to simulate typical 56k modem conditions
     public static RulesOption("Simulate &Modem Speeds", "Per&formance")
     var m_SimulateModem: boolean = false;
@@ -155,6 +204,170 @@ class Handlers
     static function OnDetach() {
         // MessageBox.Show("Fiddler is no longer the system proxy");
     }
+
+    //// ARIA_TEMPLATES_SPECIFIC START
+    static var atVersionRegex = /((1\.[0-9](\-|\.)[0-9]+[A-Z]*)|(1\.1\-SNAPSHOT)|(latest))/; // // don't add flags since new RegExp(regex.source) will break
+    static var atVersionRegexGlobal = new RegExp(atVersionRegex.source, "g");
+
+    // Returns true if the URL is AT bootstrap file, or a custom boostrap file as defined by user
+    static function AT_isATBootstrap(url: String){
+        if (at_bootstrapFileRegex) {
+            var regex = new RegExp(at_bootstrapFileRegex, "i");
+            if (regex.test(url)) {
+                return true;
+            }
+        }
+        return (new RegExp(/aria\-?templates-/.source + atVersionRegex.source)).test(url);
+    }
+
+    // Returns true if the URL is AT skin file, or a custom skin file as defined by user.
+    //
+    // Sample match: http://server:port/whatever/aria/css/atskin-1.5.3.js
+    // Should redirect to one of
+    // http://cdn.ariatemplates.com/aria/css/atskin-1.5-3.js
+    // http://cdn.ariatemplates.com/aria/css/atskin-1.5.3.js
+    // or for dev
+    // http://cdn.ariatemplates.com/dev/1.4-17A/aria/css/atskin-1.4-17A.js
+    static function AT_isATSkin(url: String) {
+        if (at_skinFileRegex) {
+            var regex = new RegExp(at_skinFileRegex, "i");
+            if (regex.test(url)) {
+                return true;
+            }
+        }
+        return new RegExp(/[^\:][^\/]\/aria\/css\/at(flat)?skin\-/.source + atVersionRegex.source).test(url);
+    }
+
+    static function AT_isATFile(url: String) {
+        return /[^\:][^\/]\/aria\/.*\.(js|tpl|tml|cml|css|txt)/i.test(url);
+    }
+
+
+    static function AT_getCdnVersion() {
+        // input can be either like 1.4.17 or 1.4-17, we normalize it to 1.4-17
+        var cdnVersion = null;
+        if (atVersionRegex.test(at_redirect)) {
+            // at_redirect matches a version number
+            cdnVersion = at_redirect;
+            // normalize last dot to a dash, if needed
+            var lastDotIdx = cdnVersion.lastIndexOf(".");
+            if (cdnVersion.indexOf("-") == -1 && lastDotIdx > -1) {
+                cdnVersion = cdnVersion.slice(0, lastDotIdx) + "-" + cdnVersion.slice(lastDotIdx + 1);
+            }
+        }
+        return cdnVersion;
+    }
+
+    static function AT_markRedirect(oSession: Session, originalUrl: String) {
+        oSession["ui-backcolor"] = "#5A96E2";
+        oSession["ui-color"] = "white";
+
+        // it makes sense to display original URL only for bootstrap and skin,
+        // since the URLs of the other AT files requested depend on the URL map in the bootstrap
+        if (originalUrl) {
+            oSession["ui-comments"] = oSession["ui-comments"] + originalUrl;
+        }
+    }
+
+    static function AT_markDebug(oSession: Session) {
+        oSession["ui-backcolor"] = "orange";
+        oSession["ui-color"] = "white";
+
+        oSession["ui-comments"] = "[injected Aria.debug = true]" + oSession["ui-comments"];
+    }
+
+    static function AT_enableAriaDebug(oSession: Session) {
+        if (AT_isATBootstrap(oSession.PathAndQuery)) {
+            var addedText = "// Begin change by Fiddler\n if (typeof(Aria)== \"undefined\"){Aria = {};}\n";
+            addedText += "Aria.debug = true;\n";
+            addedText += "// End change by Fiddler\n";
+
+            oSession.utilDecodeResponse();
+            var oBody = System.Text.Encoding.UTF8.GetString(oSession.responseBodyBytes);
+            oBody = addedText + oBody;
+            oSession.utilSetResponseBody(oBody);
+
+            AT_markDebug(oSession);
+        }
+    }
+
+    // Do redirects to AT CDN for matching files.
+    static function AT_DoBeforeRequestRedirects(oSession: Session) {
+        // do not redirect explicit requests for AT files via AT CDN or github.com, raw.githubusercontent.com etc.
+        // as this doesn't make sense and may lead to great confusion
+        if (oSession.hostname.match(/github(usercontent)?\.com/) || oSession.hostname.match(/cdn\.ariatemplates\.com/) ) {
+            return;
+        }
+
+        // do not redirect requests for test files of Aria Templates
+        if (oSession.uriContains("/test/aria/")) {
+            return;
+        }
+
+        // do not redirect legacy Aria JSP framework
+        if (oSession.uriContains("/aria/3.2")) {
+            return;
+        }
+
+        // API docs hack <http://ariatemplates.com/api> - don't redirect certain files as those are application files,
+        // not framework files
+        if (oSession.uriContains("aria/guide/apps/apidocs/") || oSession.uriContains("aria/_package")){
+            return;
+        }
+
+        var url = oSession.fullUrl;
+
+        // don't do redirects if the URL matches user-supplied pattern - useful if user's files are inside aria/*
+        if (at_skipRedirectRegex) {
+            var regex = new RegExp(at_skipRedirectRegex);
+            if (regex.test(url)) {
+                return;
+            }
+        }
+
+        var cdnVersion = AT_getCdnVersion();
+        if (!cdnVersion) {
+            FiddlerObject.StatusText = "Invalid AT version redirect: " + at_redirect + " - expecting something like 1.6-1 or 1.6.1 or 1.4.17H";
+            return;
+        }
+
+        var newUrlPrefix = "http://cdn.ariatemplates.com";
+        if (at_targetDev) {
+            newUrlPrefix = newUrlPrefix + "/dev/" + cdnVersion;
+        }
+
+        if (AT_isATBootstrap(url)) {
+            // dev http://cdn.ariatemplates.com/dev/1.6-3/aria/aria-templates-1.6-3.js
+            // min http://cdn.ariatemplates.com/aria/aria-templates-1.6-3.js
+            var newUrl = newUrlPrefix + "/aria/aria-templates-" + cdnVersion + ".js";
+            oSession.fullUrl = newUrl;
+            AT_markRedirect(oSession, url);
+        }
+        else if (AT_isATSkin(url)) {
+            // dev http://cdn.ariatemplates.com/dev/1.6-3/aria/css/atskin-1.6-3.js
+            // min http://cdn.ariatemplates.com/aria/css/atskin-1.6-3.js
+
+            if (!at_targetSkinFile) {
+                // auto-detect skin name from URL if fixed skin redirection is disabled
+                // E.g. for ".../aria/css/atskin-1.6-3.js" this finds "atskin"
+                var skinNameRegex = new RegExp( /\/([a-zA-Z0-9]+)\-/.source + atVersionRegex.source );
+                var match = url.match(skinNameRegex);
+                if (match) {
+                    at_targetSkinFile = match[1];
+                }
+            }
+            var newUrl = newUrlPrefix + "/aria/css/" + at_targetSkinFile + "-" + cdnVersion + ".js"
+            oSession.fullUrl = newUrl;
+            AT_markRedirect(oSession, url);
+        }
+        else if (AT_isATFile(url)) {
+            var replacePattern = /\w+:\/\/.*\/(aria)\//;
+            var replaceTo = newUrlPrefix + '/$1/';
+            oSession.fullUrl = url.replace(replacePattern, replaceTo);
+            AT_markRedirect(oSession, null);
+        }
+    }
+    //// ARIA_TEMPLATES_SPECIFIC END
 
     static function OnBeforeRequest(oSession: Session) {
         // Sample Rule: Color ASPX requests in RED
@@ -225,6 +438,12 @@ class Handlers
             oSession.responseCode = 304;
             oSession["ui-backcolor"] = "Lavender";
         }
+
+        //// ARIA_TEMPLATES_SPECIFIC START
+        if (at_redirect) {
+            AT_DoBeforeRequestRedirects(oSession);
+        }
+        //// ARIA_TEMPLATES_SPECIFIC END
     }
 
     // This function is called immediately after a set of request headers has
@@ -275,6 +494,12 @@ class Handlers
         if (m_Hide304s && oSession.responseCode == 304) {
             oSession["ui-hide"] = "true";
         }
+
+        //// ARIA_TEMPLATES_SPECIFIC BEGIN
+        if (at_debugMode) {
+            AT_enableAriaDebug(oSession);
+        }
+        //// ARIA_TEMPLATES_SPECIFIC END
     }
 
 /*
