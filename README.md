@@ -179,3 +179,24 @@ which is well-formatted and readable.
 ![Aria Templates minified files vs dev files](doc/firebug-dev.png)
 
 Now we can have more fun debugging our application!
+
+Troubleshooting
+===============
+
+- My application broke after the redirection, I have 404 responses for certain files!
+  - If your files have URLs like `/aria/path/to/myfile.js` they'll get redirected to AT CDN
+    as if they were framework files. Use the `avoid redirection for...` option - or, better, if possible
+    rename/move your application files so that they don't contain `/aria/` in the URL path.
+- I tried `avoid redirection for...` or `custom bootstrap file` option but it doesn't seem to work!
+  - The value of those option should be a JS regular expression (without `/` at the
+    beginning or the end). Mind the special characters and beware the leading / trailing whitespace in the input field!
+- It seems that the version I want to redirect to doesn't exist!
+  - It might be that the version in question was not yet deployed to the AT CDN. Have a look into
+    [this CDN folder](http://cdn.ariatemplates.com/dev/) to see what are the available versions in the CDN.
+- I enabled `Aria.debug` Fiddler option and my app now fails to load!
+  - Most likely, there was a bean validation error in your application (those checks are not performed when
+    `Aria.debug = false`). Check your error console in the browser and compare the arguments you passed in
+    your application to the with the beans defined in [APIDocs](http://ariatemplates.com/api).
+    The common error which doesn't seem to break the application normally but breaks it in debug mode is
+    to pass an excessive parameter in the configuration object. Note that it's strongly advised to have
+    `Aria.debug` always enabled for development, and only disable it on the production servers.
