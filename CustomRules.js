@@ -115,9 +115,9 @@ class Handlers
     BindPref("ariatemplates.ephemeral.at_redirect")
     RulesString("Aria Templates &redirection", true)
     RulesStringValue(0,"Redirect to a particular &version... (e.g. 1.5-2A)", "%CUSTOM%")
-    RulesStringValue(1,"1.4-17H", "1.4-17H")
-    RulesStringValue(2,"1.5-4", "1.5-4")
-    RulesStringValue(3,"1.6-3", "1.6-3")
+    RulesStringValue(2,"1.5-4A", "1.5-4A")
+    RulesStringValue(3,"1.6-9", "1.6-9")
+    RulesStringValue(4,"1.7.1", "1.7.1")
     public static var at_redirect: String = null;
 
     // Option to target unminified files
@@ -206,7 +206,9 @@ class Handlers
     }
 
     //// ARIA_TEMPLATES_SPECIFIC START
-    static var atVersionRegex = /((1\.[0-9](\-|\.)[0-9]+[A-Z]*)|(1\.1\-SNAPSHOT)|(latest))/; // // don't add flags since new RegExp(regex.source) will break
+    // atVersionRegex should support values like:
+    // 1.5-1  1.6-9  1.6-9A  1.7.1  1.7.1.1  1.7.1.10  1.7.10.1  1.1-SNAPSHOT  1.7-SNAPSHOT etc
+    static var atVersionRegex = /(([0-9]\.[0-9]+(\-|\.)[0-9]+((\.[0-9]+)|[A-Z]+)?)|(1\.[0-9]+\-SNAPSHOT)|(latest))/; // // don't add flags since new RegExp(regex.source) will break
     static var atVersionRegexGlobal = new RegExp(atVersionRegex.source, "g");
 
     // Returns true if the URL is AT bootstrap file, or a custom boostrap file as defined by user
@@ -244,15 +246,19 @@ class Handlers
 
 
     static function AT_getCdnVersion() {
-        // input can be either like 1.4.17 or 1.4-17, we normalize it to 1.4-17
+        // input can be either like 1.4.17 or 1.4-17, we normalize it to 1.4-17 for pre-1.7
+        // but for 1.7+ we normalize the other way!
         var cdnVersion = null;
         if (atVersionRegex.test(at_redirect)) {
             // at_redirect matches a version number
             cdnVersion = at_redirect;
-            // normalize last dot to a dash, if needed
-            var lastDotIdx = cdnVersion.lastIndexOf(".");
-            if (cdnVersion.indexOf("-") == -1 && lastDotIdx > -1) {
-                cdnVersion = cdnVersion.slice(0, lastDotIdx) + "-" + cdnVersion.slice(lastDotIdx + 1);
+            var aVersion = cdnVersion.split(/\-|\./);
+            if (Number(aVersion[0]) == 1 && Number(aVersion[1]) >= 7) {
+                // 1.7+ has versioning like 1.7.1, 1.7.1.1
+                cdnVersion = aVersion.join(".");
+            } else {
+                // 1.6- has versioning like 1.6-9, 1.6-9A
+                cdnVersion = [aVersion[0], ".", aVersion[1], "-", aVersion[2]].join("");
             }
         }
         return cdnVersion;
